@@ -1,0 +1,25 @@
+{
+    "required": true,
+    "minVersion": "0.8",
+    "package": "com.SdataG.sunwell.mixin",
+    "compatibilityLevel": "JAVA_21",
+    "plugin": "com.SdataG.sunwell.mixin.SunwellMixinPlugin",
+    "mixins": [
+        "BlockAndTintGetterMixin",
+        "LevelChunkMixin",
+        "LevelMixin",
+        "LightEngineMixin",
+        "LevelLightEngineMixin",
+        "MobMixin"
+    ],
+    "client": [
+        "client.amendments.LanternRendererExtensionMixin",
+        "client.amendments.WallLanternBlockTileRendererMixin",
+        "client.LightningBoltRendererMixin",
+        "client.LightningBoltSoundMixin",
+        "client.SodiumLevelSliceMixin"
+    ],
+    "injectors": {
+        "defaultRequire": 1
+    }
+}

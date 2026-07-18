@@ -1,0 +1,19 @@
+{
+  "type": "minecraft:crafting_shaped",
+  "category": "misc",
+  "pattern": [
+    "qqq",
+    "isi",
+    "igi"
+  ],
+  "key": {
+    "q": { "item": "minecraft:quartz" },
+    "i": { "item": "minecraft:iron_bars" },
+    "s": { "item": "minecraft:glowstone" },
+    "g": { "item": "minecraft:glass" }
+  },
+  "result": {
+    "id": "sunwell:sunwell_lantern",
+    "count": 1
+  }
+}

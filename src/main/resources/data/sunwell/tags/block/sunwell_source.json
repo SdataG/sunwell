@@ -1,0 +1,10 @@
+{
+  "replace": false,
+  "values": [
+    "sunwell:sunwell_lantern",
+    {
+      "id": "amendments:sunwell/wall_sunwell_lantern",
+      "required": false
+    }
+  ]
+}

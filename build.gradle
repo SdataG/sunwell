@@ -1,0 +1,110 @@
+plugins {
+    id 'java'
+    id 'net.neoforged.moddev' version '2.0.141'
+    id 'idea'
+}
+
+version = mod_version
+group = mod_group_id
+
+// Machine-specific deploy/test path. Kept out of version control: set `instance_mods_dir`
+// in an untracked gradle-local.properties, otherwise it defaults to <project>/run/mods.
+def localProps = new Properties()
+def localPropsFile = rootProject.file('gradle-local.properties')
+if (localPropsFile.exists()) {
+    localPropsFile.withInputStream { localProps.load(it) }
+}
+def instance_mods_dir = localProps.getProperty('instance_mods_dir') ?: (project.findProperty('instance_mods_dir') ?: "${rootDir}/run/mods")
+
+base {
+    archivesName = mod_id
+}
+
+java.toolchain.languageVersion = JavaLanguageVersion.of(21)
+
+repositories {
+    mavenCentral()
+}
+
+neoForge {
+    version = project.neo_version
+
+    runs {
+        client {
+            client()
+            gameDirectory = file(instance_mods_dir).parentFile
+        }
+        server {
+            server()
+            programArgument '--nogui'
+            gameDirectory = file(instance_mods_dir).parentFile
+        }
+        configureEach {
+            systemProperty 'forge.logging.markers', 'REGISTRIES'
+            logLevel = org.slf4j.event.Level.INFO
+        }
+    }
+
+    mods {
+        "${mod_id}" {
+            sourceSet(sourceSets.main)
+        }
+    }
+}
+
+dependencies {
+    // Amendments/Moonlight types for the optional wall + hand lantern integration.
+    // compileOnly, and resolved from the test instance rather than a maven coordinate: these are
+    // never bundled and never required at runtime. If the jars aren't there the integration simply
+    // isn't compiled in, and Sunwell builds and runs exactly as it does without Amendments.
+    var amendments = fileTree(dir: instance_mods_dir, includes: ['amendments-neoforge-*.jar'])
+    var moonlight = fileTree(dir: instance_mods_dir, includes: ['moonlight-neoforge-*.jar'])
+    if (!amendments.isEmpty() && !moonlight.isEmpty()) {
+        compileOnly amendments
+        compileOnly moonlight
+        logger.lifecycle("[sunwell] Amendments compat WILL be compiled: ${amendments.files*.name + moonlight.files*.name}")
+    } else {
+        logger.lifecycle("[sunwell] Amendments/Moonlight jars not found in ${instance_mods_dir} - compat sources excluded")
+    }
+}
+
+// The integration only compiles when the optional jars above are present.
+if (fileTree(dir: instance_mods_dir, includes: ['amendments-neoforge-*.jar']).isEmpty()) {
+    sourceSets.main.java.exclude 'com/SdataG/sunwell/integration/**'
+    sourceSets.main.java.exclude 'com/SdataG/sunwell/mixin/client/amendments/**'
+}
+
+// Expand mod metadata (neoforge.mods.toml) from src/main/templates.
+var generateModMetadata = tasks.register('generateModMetadata', ProcessResources) {
+    var replaceProperties = [
+            minecraft_version      : minecraft_version,
+            minecraft_version_range: minecraft_version_range,
+            neo_version            : neo_version,
+            loader_version_range   : loader_version_range,
+            mod_id                 : mod_id,
+            mod_name               : mod_name,
+            mod_license            : mod_license,
+            mod_version            : mod_version,
+            mod_authors            : mod_authors,
+    ]
+    inputs.properties replaceProperties
+    expand replaceProperties
+    from 'src/main/templates'
+    into 'build/generated/sources/modMetadata'
+}
+sourceSets.main.resources.srcDir generateModMetadata
+neoForge.ideSyncTask generateModMetadata
+
+tasks.withType(JavaCompile).configureEach {
+    options.encoding = 'UTF-8'
+}
+
+// Copy the built jar into the EssenceLib Test instance for playtesting.
+tasks.register('deployToPack', Copy) {
+    description = 'Copy the built Sunwell jar into the EssenceLib Test instance mods folder.'
+    group = 'sunwell'
+    dependsOn tasks.named('jar')
+    from tasks.named('jar').map { it.archiveFile }
+    into file(instance_mods_dir)
+    duplicatesStrategy = DuplicatesStrategy.INCLUDE
+}
