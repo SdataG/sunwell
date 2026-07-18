@@ -1,0 +1,10 @@
+{
+	"variants": {
+		"hanging=false": {
+			"model": "sunwell:block/lantern"
+		},
+		"hanging=true": {
+			"model": "sunwell:block/lantern_hanging"
+		}
+	}
+}

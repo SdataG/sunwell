@@ -1,0 +1,47 @@
+package com.SdataG.sunwell.client;
+
+import com.SdataG.sunwell.Sunwell;
+import com.SdataG.sunwell.integration.SunwellAmendmentsClientCompat;
+import com.SdataG.sunwell.client.render.SunwellLanternItemRenderer;
+import com.SdataG.sunwell.client.render.SunwellLanternRenderer;
+import com.SdataG.sunwell.registry.ModBlockEntities;
+import com.SdataG.sunwell.registry.ModBlocks;
+import net.minecraft.client.Minecraft;
+import net.minecraft.client.renderer.ItemBlockRenderTypes;
+import net.minecraft.client.renderer.RenderType;
+import net.minecraft.client.renderer.blockentity.BlockEntityRenderers;
+import net.minecraftforge.api.distmarker.Dist;
+import net.minecraftforge.eventbus.api.SubscribeEvent;
+import net.minecraftforge.fml.common.Mod;
+import net.minecraftforge.fml.event.lifecycle.FMLClientSetupEvent;
+
+@Mod.EventBusSubscriber(modid = com.SdataG.sunwell.Sunwell.MOD_ID, bus = Mod.EventBusSubscriber.Bus.MOD, value = Dist.CLIENT)
+public final class SunwellClientSetup {
+
+    private SunwellClientSetup() {
+    }
+
+    @SubscribeEvent
+    public static void onClientSetup(FMLClientSetupEvent event) {
+        event.enqueueWork(() -> {
+            // Core client setup first. Optional compat must never be able to run before — or instead
+            // of — the renderers the mod needs to function on its own.
+            ItemBlockRenderTypes.setRenderLayer(ModBlocks.SUNWELL_LANTERN.get(), RenderType.translucent());
+            BlockEntityRenderers.register(ModBlockEntities.SUNWELL_LANTERN_BE.get(), SunwellLanternRenderer::new);
+            SunwellLanternItemRenderer.init(
+                    Minecraft.getInstance().getBlockEntityRenderDispatcher(),
+                    Minecraft.getInstance().getEntityModels()
+            );
+
+            // Belt and braces: SunwellAmendmentsClientCompat already guards and catches internally,
+            // but a link failure can surface at the call site rather than inside the callee, which no
+            // guard within it could catch. Sunwell works fine with no Amendments at all, so nothing
+            // this optional is allowed to abort client setup.
+            try {
+                SunwellAmendmentsClientCompat.init();
+            } catch (RuntimeException | LinkageError error) {
+                Sunwell.LOGGER.warn("[sunwell] Amendments client compat skipped (fail-open): {}", error.toString());
+            }
+        });
+    }
+}

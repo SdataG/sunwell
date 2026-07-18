@@ -1,0 +1,42 @@
+# Gradle / Forge
+.gradle/
+build/
+bin/
+out/
+run/
+*.log
+
+# IDE / editor
+.idea/
+*.iml
+*.ipr
+*.iws
+.classpath
+.project
+.settings/
+.vscode/
+.cursor/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Local dev artifacts (not shipped)
+.arena/
+build_log.txt
+# Asset pipeline / dev tooling — kept locally, not published to the repo
+tools/
+# Docs site / CurseForge copy — kept locally, not published to the repo
+docs/
+# Machine-specific gradle overrides (e.g. instance_mods_dir)
+gradle-local.properties
+# Generated mixin refmap (emitted into build/ and the jar at build time)
+/sunwell.refmap.json
+# Stray decompiled/extracted dependency classes (compileOnly deps live in the instance mods dir)
+/net/
+# Python tool caches
+tools/__pycache__/
+__pycache__/
+*.pyc
+
+.gstack/

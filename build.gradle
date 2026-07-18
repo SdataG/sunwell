@@ -1,0 +1,165 @@
+plugins {
+    id 'eclipse'
+    id 'idea'
+    id 'net.minecraftforge.gradle' version '[6.0.16,6.2)'
+    id 'org.spongepowered.mixin' version '0.7.+'
+}
+
+version = "${mod_version}"
+group = "${mod_group_id}"
+
+base {
+    archivesName = "${mod_id}"
+}
+
+// Machine-specific path to the local test instance (deploy + optional compat jars).
+// Kept out of version control: set `liminal_instance_dir` in an untracked gradle-local.properties.
+def localProps = new Properties()
+def localPropsFile = rootProject.file('gradle-local.properties')
+if (localPropsFile.exists()) {
+    localPropsFile.withInputStream { localProps.load(it) }
+}
+def liminalInstancePath = localProps.getProperty('liminal_instance_dir') ?: findProperty('liminal_instance_dir')
+def liminalInstanceDir = liminalInstancePath ? file(liminalInstancePath) : null
+def liminalModsDir = liminalInstanceDir?.exists() ? new File(liminalInstanceDir, 'mods') : null
+
+java.toolchain.languageVersion = JavaLanguageVersion.of(17)
+
+minecraft {
+    mappings channel: 'official', version: "${minecraft_version}"
+
+    copyIdeResources = true
+
+    runs {
+        // Build-only project; no run configs are required, but a server run is
+        // handy if you ever want to debug in dev.
+        server {
+            workingDirectory project.file('run')
+            property 'forge.logging.markers', 'REGISTRIES'
+            property 'forge.logging.console.level', 'debug'
+            mods {
+                "${mod_id}" {
+                    source sourceSets.main
+                }
+            }
+        }
+    }
+}
+
+mixin {
+    add sourceSets.main, "${mod_id}.refmap.json"
+    config "${mod_id}.mixins.json"
+}
+
+repositories {
+    mavenCentral()
+}
+
+dependencies {
+    minecraft "net.minecraftforge:forge:${minecraft_version}-${forge_version}"
+    implementation 'it.unimi.dsi:fastutil:8.5.12'
+    annotationProcessor 'org.spongepowered:mixin:0.8.5:processor'
+    // Amendments/Moonlight types for optional client mixin only — not bundled at runtime.
+    if (liminalModsDir?.isDirectory()) {
+        compileOnly files("${liminalModsDir}/amendments-1.20-1.2.19.jar")
+        compileOnly files("${liminalModsDir}/moonlight-1.20-2.14.1-forge.jar")
+    }
+}
+
+tasks.register('syncAssets', Exec) {
+    description = 'Regenerate lantern models, textures, and LanternModelBounds from Blockbench source.'
+    group = 'sunwell'
+    workingDir project.projectDir
+    commandLine 'python', 'tools/patch_lantern_assets.py'
+}
+
+tasks.named('processResources', ProcessResources).configure {
+    dependsOn 'syncAssets'
+    var replaceProperties = [
+            minecraft_version      : minecraft_version,
+            minecraft_version_range: minecraft_version_range,
+            forge_version          : forge_version,
+            forge_version_range    : forge_version_range,
+            loader_version_range   : loader_version_range,
+            mod_id                 : mod_id,
+            mod_name               : mod_name,
+            mod_license            : mod_license,
+            mod_version            : mod_version,
+            mod_authors            : mod_authors,
+            mod_description        : mod_description
+    ]
+    inputs.properties replaceProperties
+
+    filesMatching(['META-INF/mods.toml', 'pack.mcmeta']) {
+        expand replaceProperties
+    }
+}
+
+tasks.named('jar', Jar).configure {
+    manifest {
+        attributes([
+                'Specification-Title'     : mod_id,
+                'Specification-Vendor'    : mod_authors,
+                'Specification-Version'   : '1',
+                'Implementation-Title'    : project.name,
+                'Implementation-Version'  : project.jar.archiveVersion,
+                'Implementation-Vendor'   : mod_authors,
+                'MixinConfigs'            : "${mod_id}.mixins.json"
+        ])
+    }
+    finalizedBy 'reobfJar'
+}
+
+tasks.withType(JavaCompile).configureEach {
+    options.encoding = 'UTF-8'
+    dependsOn 'syncAssets'
+}
+
+tasks.register('cleanOldDeployJars', Delete) {
+    description = 'Remove previous sunwell jars from the instance mods folder.'
+    group = 'sunwell'
+    onlyIf { liminalModsDir?.isDirectory() }
+    delete fileTree(liminalModsDir) {
+        include "${mod_id}-*.jar"
+    }
+}
+
+tasks.register('verifyItemModels', Exec) {
+    description = 'Fail if deployed sunwell item models lack forge:composite orb layer.'
+    group = 'sunwell'
+    workingDir project.projectDir
+    commandLine 'python', 'tools/verify_item_models.py'
+}
+
+tasks.register('deploy', Copy) {
+    description = 'Copy the reobfuscated jar to the instance mods folder.'
+    group = 'sunwell'
+    dependsOn 'reobfJar', 'cleanOldDeployJars'
+
+    onlyIf {
+        liminalModsDir?.isDirectory()
+    }
+
+    from(layout.buildDirectory.dir('reobfJar')) {
+        include 'output.jar'
+        rename 'output.jar', "${mod_id}-${mod_version}.jar"
+    }
+    into liminalModsDir
+    finalizedBy 'verifyDeployedUvs', 'verifyItemModels'
+}
+
+tasks.register('verifyDeployedUvs', Exec) {
+    description = 'Fail if deployed sunwell jar block models have UV coordinates outside 0–16.'
+    group = 'sunwell'
+    workingDir project.projectDir
+    onlyIf {
+        liminalModsDir != null && new File(liminalModsDir, "${mod_id}-${mod_version}.jar").isFile()
+    }
+    commandLine 'python', 'tools/verify_deployed_uvs.py'
+}
+
+tasks.matching { it.name == 'reobfJar' }.configureEach {
+    if (liminalModsDir?.isDirectory()) {
+        finalizedBy 'deploy'
+    }
+}
