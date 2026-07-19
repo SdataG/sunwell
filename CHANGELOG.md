@@ -2,6 +2,11 @@
 
 Notable changes to **Sunwell**. Format based on [Keep a Changelog](https://keepachangelog.com/).
 
+## [Unreleased]
+
+### Fixed
+- **Crash on world load with Embeddium 0.3.31+**: `SodiumLevelSliceMixin` was marked `@Pseudo` (Embeddium wasn't wired into the compile classpath), which silently skipped refmap generation for its `getBrightness` injector. With no refmap entry, Mixin fell back to searching Embeddium's `WorldSlice` for a method literally named `getBrightness` — but that method overrides a vanilla interface method, so Embeddium's build reobfuscates it to Forge's SRG name before shipping, and no such literal method exists at runtime. Result: `InvalidInjectionException: ... could not find any targets matching 'getBrightness(...)'`, fatal on any world load with Embeddium present. Embeddium is now a real `compileOnly` dependency (see `build.gradle`) so the mixin resolves and remaps correctly at build time, same as every other mixin in this mod.
+
 ## [2.2.0] - 2026-07-18 - Real lightning, real shader support
 
 The strike is a strike now: it arcs from the orb, forks toward open space, floods the room with real light for an instant, and closes from the ground up as it dies. Shaderpacks (Iris/Oculus) and Sodium/Embeddium now see the sunwell the way vanilla always did.

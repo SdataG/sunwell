@@ -7,7 +7,6 @@ import net.minecraft.core.BlockPos;
 import net.minecraft.world.level.LightLayer;
 import org.spongepowered.asm.mixin.Final;
 import org.spongepowered.asm.mixin.Mixin;
-import org.spongepowered.asm.mixin.Pseudo;
 import org.spongepowered.asm.mixin.Shadow;
 import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
@@ -26,12 +25,19 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
  * WorldSlice} overrides, so it remaps through Forge's own SRG mapping like any other vanilla-method
  * override -- no different from targeting a real vanilla class.</p>
  *
- * <p>{@code @Pseudo}: unlike Amendments/Moonlight, Embeddium isn't wired into the compile classpath, so
- * the Mixin annotation processor can't resolve this target class at compile time. {@code @Pseudo} skips
- * that compile-time class-hierarchy check and defers resolution to runtime, where {@code
- * SunwellMixinPlugin} only ever applies this mixin once Embeddium is confirmed loaded.</p>
+ * <p><b>Do not mark this {@code @Pseudo}.</b> An earlier revision did, because Embeddium wasn't wired
+ * into the compile classpath and {@code @Pseudo} lets the Mixin annotation processor skip the class it
+ * can't resolve. But that skip also disables refmap generation for this injector: with no refmap entry,
+ * {@code remap = true} has nothing to remap from, so at runtime Mixin falls back to searching {@code
+ * WorldSlice}'s compiled method table for the <em>literal</em> name {@code "getBrightness"} -- and since
+ * this method overrides a vanilla interface method, Embeddium's build reobfuscates it to Forge's SRG name
+ * before shipping, so no method is literally called {@code getBrightness} at runtime. That mismatch is
+ * exactly what throws {@code InvalidInjectionException: ... could not find any targets matching
+ * 'getBrightness(...)'}. Embeddium is now a real {@code compileOnly} dependency (see {@code build.gradle},
+ * mirroring the existing Amendments/Moonlight setup) so the annotation processor can resolve {@code
+ * WorldSlice} for real and generate the correct SRG mapping, the same way it already does for every other
+ * mixin in this mod that targets a genuine vanilla method.</p>
  */
-@Pseudo
 @Mixin(targets = "me.jellysquid.mods.sodium.client.world.WorldSlice", remap = true)
 public abstract class SodiumLevelSliceMixin {
 
