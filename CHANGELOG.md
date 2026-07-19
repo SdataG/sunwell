@@ -2,7 +2,7 @@
 
 Notable changes to **Sunwell**. Format based on [Keep a Changelog](https://keepachangelog.com/).
 
-## [Unreleased] - Real lightning, real shader support
+## [2.2.0] - 2026-07-18 - Real lightning, real shader support
 
 The strike is a strike now: it arcs from the orb, forks toward open space, floods the room with real light for an instant, and closes from the ground up as it dies. Shaderpacks (Iris/Oculus) and Sodium/Embeddium now see the sunwell the way vanilla always did.
 
