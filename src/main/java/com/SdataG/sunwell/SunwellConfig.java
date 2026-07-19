@@ -54,7 +54,7 @@ public final class SunwellConfig {
     public static volatile int snowMaxLayers = 8;
     public static volatile boolean weatherShaftParticles = true;
     public static volatile int lightningThroughOdds = 40000;
-    public static volatile int lightningRodBoost = 400;
+    public static volatile int lightningRodBoost = 20;
     public static volatile boolean lightningVisualOnly = false;
     public static volatile int nodeBudgetPerTick = 80000;
     public static volatile int chunkBudgetPerTick = 24;
@@ -122,7 +122,7 @@ public final class SunwellConfig {
         LIGHTNING_ROD_BOOST = b.comment("Multiplier making sunwell lightning far more frequent on a column with a",
                         "vanilla lightning_rod within 4 blocks (effective odds = lightningThroughOdds / this).",
                         "1 disables the rod bonus.")
-                .defineInRange("lightningRodBoost", 400, 1, 100_000);
+                .defineInRange("lightningRodBoost", 20, 1, 100_000);
         LIGHTNING_VISUAL_ONLY = b.comment("If true, sunwell lightning is visual-only (flash + sound, no fire). Default false: a",
                         "real strike is rare (see lightningThroughOdds), so it lights fires and does damage",
                         "like true weather. A lightning rod in range still catches it harmlessly.")
