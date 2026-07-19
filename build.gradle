@@ -64,6 +64,15 @@ dependencies {
         compileOnly files("${liminalModsDir}/amendments-1.20-1.2.19.jar")
         compileOnly files("${liminalModsDir}/moonlight-1.20-2.14.1-forge.jar")
     }
+    // Embeddium's WorldSlice for SodiumLevelSliceMixin only — not bundled at runtime. Wired as a real
+    // dependency (rather than @Pseudo) so the Mixin annotation processor can resolve getBrightness and
+    // generate a correct SRG mapping; see the doc comment on SodiumLevelSliceMixin for why that matters.
+    if (liminalModsDir?.isDirectory()) {
+        var embeddium = fileTree(dir: liminalModsDir, includes: ['embeddium-*.jar'])
+        if (!embeddium.isEmpty()) {
+            compileOnly embeddium
+        }
+    }
 }
 
 tasks.register('syncAssets', Exec) {
