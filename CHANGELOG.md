@@ -2,6 +2,42 @@
 
 Notable changes to **Sunwell**. Format based on [Keep a Changelog](https://keepachangelog.com/).
 
+## [Unreleased] - Real lightning, real shader support
+
+The strike is a strike now: it arcs from the orb, forks toward open space, floods the room with real light for an instant, and closes from the ground up as it dies. Shaderpacks (Iris/Oculus) and Sodium/Embeddium now see the sunwell the way vanilla always did.
+
+### Added
+- **World-aware lightning branches.** Forks sample nearby directions and keep whichever has the most open room ahead, then clip their own length to stop right at the wall/floor/ceiling they actually reach — no more branches clipping through solid blocks. Growth speed scales per branch: a close target grows slowly, a far one lashes out fast.
+- **Real in-world strike lighting.** A strike now flares genuine block light around its impact point — room-wide for the strike tick itself, contracting to a local glow through the leader/fade. Not just decorative geometry anymore.
+- **Bottom-up closing fade.** The bolt visibly closes from the strike end upward as it dies, instead of dimming everywhere at once. Branches fade in step with the same sweep.
+- **Lightning favors height.** A free strike (no rod) leans toward the tallest thing in the cone — a tree, an exposed mob or player, a raised ledge — while staying random. Never lands within a block of the lamp anymore.
+- **Sodium / Embeddium light fix.** Both clone raw light data and mesh from the copy, bypassing the vanilla light engine entirely — sunwell rooms rendered pitch black under either. Reapplies the boost at their own read point instead.
+- **Shaderpack support (Iris / Oculus).** The room now fills with real block light under a shaderpack (which doesn't render virtual sky light as brightness), the orb blooms at full brightness instead of reading as a flat disc, and the additive glow render type is registered under vanilla's own `"lightning"` name so Iris routes it through a known-working program instead of silently dropping the dimmest parts of the fade.
+- **Snow accumulation.** Falling snow now actually piles up as snow layers on the floor while it's snowing, instead of just falling through. `snowAccumulation`, `snowAccumulateOdds`, `snowMaxLayers`.
+- **`/sunwell lightning <odds>` and `/sunwell rodboost <mult>`.** Tune strike frequency live without editing the config; persists to disk.
+- **`debugLightning`.** Logs where each strike lands and why, for diagnosing strikes hitting empty air or empty rooms.
+
+### Changed
+- **Lantern block light 8 → 15.** A proper lantern glow on top of the sky-cone projection, not just the projected light alone.
+- **Rain covers the whole lit cone**, not just the centre, and scales with weather (light drizzle vs. a real downpour in a storm).
+- **A wall- or low-mounted lantern now glows around itself immediately**, instead of needing several blocks of drop before the cone opened wide enough to light anything.
+- **The lightning core is brighter**, with an extra hyper-bright inner filament and wider soft bloom/halo layers, so the bolt reads as glowing in plain vanilla, not just under a shaderpack's own bloom pass.
+- **The return-stroke pulse actually climbs.** Brighter, and given enough frames to visibly travel from strike to lamp instead of snapping through in about one tick.
+- **Held-lantern light shafts removed.** They read as jank in hand; the orb's halo now correctly tells true first-person apart from third-person/other entities (including the Amendments hand-render path), so only a world-visible lantern shows sun shafts.
+
+### Fixed
+- **Dynamic Trees stopped growing** — a since-reverted `skyLevel` experiment briefly dropped effective light below the growth threshold.
+- **`Cannot get config value before config is loaded`** crash on world/server shutdown.
+- Lightning god-ray light-shaft beams (added, then removed): didn't hold up well enough to ship, on or off a shaderpack.
+
+### Config
+New / changed in `config/sunwell-server.toml`:
+- `lightningThroughOdds` default `80000` → `40000`; `lightningRodBoost` default `40` → `20`
+- `skyLevel` unchanged at `14` (kept growth-safe; see Fixed)
+- `snowAccumulation`, `snowAccumulateOdds`, `snowMaxLayers`, `debugLightning`
+
+---
+
 ## [2.1.0] - One lamp, four skies
 
 The lantern is a window now. The orb shows the sky it stands for (sun, moon, rain cloud, or thunderhead) and tracks the real sky on the real clock.
