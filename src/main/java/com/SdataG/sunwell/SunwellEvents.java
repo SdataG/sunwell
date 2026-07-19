@@ -21,6 +21,11 @@ import net.neoforged.neoforge.event.tick.LevelTickEvent;
 public final class SunwellEvents {
 
     @SubscribeEvent
+    public static void onRegisterCommands(net.neoforged.neoforge.event.RegisterCommandsEvent event) {
+        SunwellCommands.register(event.getDispatcher());
+    }
+
+    @SubscribeEvent
     public static void onLevelLoad(LevelEvent.Load event) {
         if (event.getLevel() instanceof Level level) {
             SunwellManager.onLevelLoad(level);

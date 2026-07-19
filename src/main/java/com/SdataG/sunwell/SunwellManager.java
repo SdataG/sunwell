@@ -78,6 +78,8 @@ public final class SunwellManager {
      * its backing array (AIOOBE during rehash) and crashed on mass re-mesh, e.g. a weather change.
      */
     private static final Long2ByteOpenHashMap EMPTY_OUTDOOR = new Long2ByteOpenHashMap();
+    /** Base lit radius right at a source, so a wall/low lamp still glows around itself, not just deep down. */
+    private static final int SOURCE_GLOW_RADIUS = 2;
     private volatile Long2ByteOpenHashMap outdoorSnapshot = EMPTY_OUTDOOR;
     private int outdoorRefreshCounter;
 
@@ -147,7 +149,19 @@ public final class SunwellManager {
      * Never applied on the server, so growth and spawning are untouched.
      */
     public int shaderBlockFillAt(BlockPos pos) {
-        return skyAt(pos);
+        int sky = skyAt(pos);
+        if (sky <= 0) {
+            return 0;
+        }
+        // Only a SMALL warm floor so a shader room isn't pitch black. The day/night colour comes from the
+        // boosted SKY lightmap, which the shaderpack tints by time -- neutral-bright at noon, dim blue at
+        // night -- and that also carries the dimming. A big warm fill made every room read as permanent
+        // daytime; keeping it low lets the sky ambient dominate so nights actually look like night.
+        //
+        // The floor (2, was 1) matters most during storms: respondToWeather already dims `sky` hard while
+        // it's raining/thundering, and at that low end the old floor of 1 read as pitch black under a
+        // shaderpack. A slightly higher floor keeps the room just visible without undoing the storm dark.
+        return Math.max(2, Math.min(7, Math.round(sky * 0.44F)));
     }
 
     /** Re-mesh the lit region when the shader pack is toggled, so the block-light fill takes effect. */
@@ -770,11 +784,12 @@ public final class SunwellManager {
             return maxR;
         }
         int depth = Math.max(0, depthBelowSource);
+        int base = Math.min(SOURCE_GLOW_RADIUS, maxR);   // base glow disc around the lamp (matches the flood seed)
         int effective = Math.max(dropHeight, maxR);
         if (dropHeight <= 0) {
-            return Math.min(maxR, spread * depth);
+            return Math.min(maxR, Math.max(base, spread * depth));
         }
-        return Math.min(maxR, (int) ((long) depth * maxR / effective));
+        return Math.min(maxR, Math.max(base, (int) ((long) depth * maxR / effective)));
     }
 
     /**
@@ -1444,16 +1459,19 @@ public final class SunwellManager {
             // land on maxRadius; shorter drops stay 1:1 and just light a smaller pool.
             int seedEff = coneSpread == 0 ? maxR
                     : Math.max(coneDropHeight(this.level, cursor.set(sx, sy, sz).immutable(), maxD), maxR);
-            // Seed radius: 0 in cone mode so the cone starts UNDER the lamp rather than as a disc
-            // around it. The first step down gets whatever the stretched schedule grants.
-            int seedSide = coneSpread == 0 ? maxR - 1 : 0;
-            int seedDown = coneSpread == 0 ? maxR : coneGrant(0, maxR, seedEff);
+            // A base glow radius around the lamp itself, so a wall- or low-mounted lantern still lights a
+            // disc around it and the floor right below. It used to seed 0 sideways in cone mode, so a lamp
+            // under ~4 blocks up lit almost nothing; the cone now widens from this base downward.
+            int glowBase = coneSpread == 0 ? maxR - 1 : Math.min(SOURCE_GLOW_RADIUS, maxR);
+            int seedSide = glowBase;
+            int seedUp = coneSpread == 0 ? maxR - 2 : Math.max(0, glowBase - 1);
+            int seedDown = coneSpread == 0 ? maxR : Math.max(glowBase, coneGrant(0, maxR, seedEff));
             tryVisit(sx, sy - 1, sz, seedDown, maxD - 1, true, seedProfile, seedEff, best, posQueue, budgetQueue, profileQueue, heightQueue, cursor, cache, minY, maxY);
             tryVisit(sx + 1, sy, sz, seedSide, maxD, false, seedProfile, seedEff, best, posQueue, budgetQueue, profileQueue, heightQueue, cursor, cache, minY, maxY);
             tryVisit(sx - 1, sy, sz, seedSide, maxD, false, seedProfile, seedEff, best, posQueue, budgetQueue, profileQueue, heightQueue, cursor, cache, minY, maxY);
             tryVisit(sx, sy, sz + 1, seedSide, maxD, false, seedProfile, seedEff, best, posQueue, budgetQueue, profileQueue, heightQueue, cursor, cache, minY, maxY);
             tryVisit(sx, sy, sz - 1, seedSide, maxD, false, seedProfile, seedEff, best, posQueue, budgetQueue, profileQueue, heightQueue, cursor, cache, minY, maxY);
-            tryVisit(sx, sy + 1, sz, coneSpread == 0 ? maxR - 2 : 0, maxD, false, seedProfile, seedEff, best, posQueue, budgetQueue, profileQueue, heightQueue, cursor, cache, minY, maxY);
+            tryVisit(sx, sy + 1, sz, seedUp, maxD, false, seedProfile, seedEff, best, posQueue, budgetQueue, profileQueue, heightQueue, cursor, cache, minY, maxY);
         }
 
         long nodes = 0;

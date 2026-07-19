@@ -69,6 +69,12 @@ public class Sunwell {
     }
 
     private void onConfig(ModConfigEvent event) {
+        // The Unloading event (world leave / server stop) fires here too, but the config values can no
+        // longer be read then -- baking would throw "Cannot get config value before config is loaded"
+        // and crash the shutdown. Only (re)bake when the config is actually available.
+        if (event instanceof ModConfigEvent.Unloading) {
+            return;
+        }
         if (event.getConfig().getSpec() == SunwellConfig.SPEC) {
             SunwellConfig.bake();
             SunwellManager.invalidateAll();

@@ -74,6 +74,14 @@ public final class LanternRendererExtensionMixin {
         float partialTick = Minecraft.getInstance().getTimer().getGameTimeDeltaPartialTick(false);
         BlockPos effectPos = entity.blockPosition();
 
+        // Amendments' hand-lantern render handles EVERY case through this one injection: the local
+        // player's own first-person hand, their third-person model, and any other entity holding one.
+        // Only the first is actually "in hand" in view space -- the rest are world-visible objects on a
+        // body, same as a placed lantern, and should keep the camera-billboarded halo. Mirrors the check
+        // vanilla's own first-person hand renderer uses.
+        boolean viewSpace = entity == Minecraft.getInstance().player
+                && Minecraft.getInstance().options.getCameraType().isFirstPerson();
+
         poseStack.pushPose();
         // Re-enter the item space ItemRenderer.render used and then popped. See the class javadoc.
         poseStack.translate(-0.5D, -0.5D, -0.5D);
@@ -86,7 +94,7 @@ public final class LanternRendererExtensionMixin {
                 false,
                 partialTick,
                 net.minecraft.client.renderer.texture.OverlayTexture.NO_OVERLAY,
-                false
+                viewSpace
         );
         poseStack.popPose();
     }

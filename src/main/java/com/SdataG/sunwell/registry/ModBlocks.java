@@ -33,7 +33,7 @@ public final class ModBlocks {
      * {@code sunwell_source} only stay pinned at full strength and are unaffected.</p>
      */
     public static final DeferredHolder<Block, Block> SUNWELL_LANTERN = BLOCKS.register("sunwell_lantern",
-            () -> new SunwellLanternBlock(lanternProperties(state -> 8)));
+            () -> new SunwellLanternBlock(lanternProperties(state -> 15)));
 
     public static final DeferredHolder<Item, Item> SUNWELL_LANTERN_ITEM = ITEMS.register("sunwell_lantern",
             () -> new SunwellLanternItem(SUNWELL_LANTERN.get(), new Item.Properties()));
