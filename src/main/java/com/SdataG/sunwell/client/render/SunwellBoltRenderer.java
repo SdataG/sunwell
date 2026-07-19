@@ -10,6 +10,7 @@ import net.minecraft.util.Mth;
 import net.minecraft.util.RandomSource;
 import net.minecraft.world.entity.LightningBolt;
 import net.minecraft.world.level.Level;
+import net.minecraft.world.level.block.state.BlockState;
 import org.joml.Matrix4f;
 import org.joml.Vector3f;
 
@@ -51,16 +52,25 @@ public final class SunwellBoltRenderer {
 
     /** Thin bright core, soft glow, and a wide luminous bloom (the photo look). */
     private static final float CORE_WIDTH = 0.035F;
-    private static final float HALO_WIDTH = 0.11F;
-    private static final float BLOOM_WIDTH = 0.34F;
+    /** Inner hyper-bright filament, thinner than the core -- fakes a bloom right at the white-hot centre. */
+    private static final float CORE_HOT_WIDTH = 0.018F;
+    // HALO and BLOOM are the fake-bloom-via-geometry layers: nested wide, soft, dim quads around the
+    // core. This is what makes the bolt look blown-out/glowing in PLAIN VANILLA with no post-process
+    // bloom pass to lean on -- a shaderpack's own bloom stacks on top of these and looks even softer,
+    // but they're sized and lit to already read as a glow on their own.
+    private static final float HALO_WIDTH = 0.13F;
+    private static final float BLOOM_WIDTH = 0.42F;
 
 
     /** Whole VFX length in ticks (~half a second at 20 tps). */
     private static final float LIFE_TICKS = 10.0F;
 
-    /** Beat boundaries over the 10-tick life: spread (leader) ticks 0-5, strike (return) 5-7, fade 7-10. */
+    /** Beat boundaries over the 10-tick life: spread (leader) ticks 0-5, strike (return) 5-6.8, fade after. */
     private static final float LEADER_END = 0.5F;
-    private static final float RETURN_END = 0.6F;
+    // Slightly longer than a single tick (was 0.6) so the climbing return-stroke pulse has enough frames
+    // to visibly travel the FULL distance from strike to lamp, instead of snapping through almost
+    // instantly. Still snappy -- under 2 ticks total.
+    private static final float RETURN_END = 0.68F;
 
     /** The tick the return stroke lands on — when the thunder/impact sound should play. */
     public static final int STRIKE_TICK = Math.round(LEADER_END * LIFE_TICKS);
@@ -114,6 +124,7 @@ public final class SunwellBoltRenderer {
         float age = bolt.tickCount + partialTick;
         float t = age / LIFE_TICKS;
         if (t >= 1.0F) {
+            LightningFlashLight.clear(bolt.getId()); // spent -- release its in-world light immediately
             return true; // ours, but spent -- draw nothing rather than let vanilla back in
         }
         float flick = 0.7F + 0.3F * Mth.abs(Mth.sin(age * 15.0F));
@@ -127,29 +138,51 @@ public final class SunwellBoltRenderer {
         float baseA;
         float branchBright;
         float lampGlow;
+        float impactLight; // strike-point flash: 0 until it lands, peaks on the return stroke, fades after
+        float flashRadius; // how far the in-world BLOCK light reaches -- room-wide on the strike tick itself
+        // 0 until the fade beat starts, then ramps 0->1 over the fade -- how far the "close" has swept up
+        // from the strike end. Fed into the trunk's own tipFade, which already fades/narrows toward
+        // frac=1 (the strike/bottom end), so the bolt visibly closes from the bottom up as it dies.
+        float closeFrac;
         float pulseC = 0.0F;
-        float pulseW = 0.14F;
+        float pulseW = 0.16F;  // narrow enough to read as a distinct travelling band, not a wide wash
         float pulseA = 0.0F;
         if (t < LEADER_END) {
             reach = Mth.clamp(t / LEADER_END, 0.0F, 1.0F);
             baseA = 0.30F * flick;
-            branchBright = baseA * 0.3F;      // spread: branches at ~30% opacity while they grow out
+            branchBright = baseA * 0.9F;      // spread: branches clearly visible while they grow out
             lampGlow = 0.12F + reach * 0.55F; // and the lamp charges brighter as the leader reaches down
+            impactLight = 0.0F;               // hasn't struck yet -- nothing to flash
+            flashRadius = 8.0F;
+            closeFrac = 0.0F;
         } else if (t < RETURN_END) {
             float u = (t - LEADER_END) / (RETURN_END - LEADER_END);
             reach = 1.0F;
             baseA = 0.5F;
             pulseC = 1.0F - u; // frac 1 = strike, frac 0 = orb: the band runs hit -> lamp
-            pulseA = 1.3F;
-            branchBright = 0.0F;              // strike: the return stroke washes the branches out
+            pulseA = 2.2F;     // the climbing return stroke -- a lot of bloom, not a subtle highlight
+            branchBright = 0.0F;              // strike: the return stroke washes the branches out --
+                                               // a clean flash, branches return in the fade
             lampGlow = 1.0F;                  // lamp flares at the strike
+            impactLight = 1.0F;               // the flash: peak brightness the instant it grounds
+            flashRadius = 24.0F;              // the strike tick itself: brighten the WHOLE room, not just
+                                               // a local falloff near the impact point
+            closeFrac = 0.0F;
         } else {
             float f = 1.0F - (t - RETURN_END) / (1.0F - RETURN_END);
             reach = 1.0F;
             baseA = 0.6F * f * flick;
-            branchBright = baseA * 0.6F;      // fade: branches return at 60% afterglow opacity
+            branchBright = baseA * 0.85F;     // fade: branches brighter in the afterglow, more seeable
             lampGlow = baseA;
+            impactLight = f;                  // afterglow: the impact light fades out with the bolt
+            closeFrac = 1.0F - f;             // 0 at the start of the fade, 1 once it's fully closed
+            flashRadius = 8.0F;                // contracts back down to a local glow as it fades
         }
+
+        // Register the actual in-world BLOCK light this bolt casts at its strike point (read back by
+        // LightEngineMixin), and a matching additive bloom quad drawn below at the strike end of the
+        // channel -- so the strike isn't just glowing geometry, it visibly lights the room around it.
+        LightningFlashLight.update(bolt.getId(), strike, impactLight, flashRadius);
 
         RandomSource random = RandomSource.create(bolt.getId() * 31L);
         VertexConsumer buffer = buffers.getBuffer(GlowRenderType.ORB_GLOW);
@@ -167,20 +200,50 @@ public final class SunwellBoltRenderer {
         // ribbon is continuous and the jag corners don't split into visible flat panels.
         Vector3f[] sides = computeSides(path, camera);
 
-        // Bloom, halo, then the thin white core -- each grown to `reach` and lit by the moving pulse.
-        drawChannel(buffer, matrix, path, sides, BLOOM_WIDTH, 0.45F, 0.58F, 1.0F, reach, 0.10F * baseA, pulseC, pulseW, 0.45F * pulseA);
-        drawChannel(buffer, matrix, path, sides, HALO_WIDTH, 0.55F, 0.68F, 1.0F, reach, 0.28F * baseA, pulseC, pulseW, 0.7F * pulseA);
-        drawChannel(buffer, matrix, path, sides, CORE_WIDTH, 0.97F, 0.98F, 1.0F, reach, baseA, pulseC, pulseW, pulseA);
+        // Bloom, halo, then the thin white core -- each grown to `reach` and lit by the moving pulse, and
+        // (via closeFrac, reusing the same tip-fade/taper the branches use toward frac=1) fading AND
+        // narrowing from the strike/bottom end upward once the bolt starts to die -- the bolt visibly
+        // closes from the ground up instead of dimming everywhere at once.
+        drawChannel(buffer, matrix, path, sides, BLOOM_WIDTH, 0.6F, 0.72F, 1.0F, reach, 0.14F * baseA, pulseC, pulseW, 1.1F * pulseA, closeFrac);
+        drawChannel(buffer, matrix, path, sides, HALO_WIDTH, 0.7F, 0.82F, 1.0F, reach, 0.32F * baseA, pulseC, pulseW, 1.6F * pulseA, closeFrac);
+        drawChannel(buffer, matrix, path, sides, CORE_WIDTH, 0.97F, 0.98F, 1.0F, reach, baseA * 1.3F, pulseC, pulseW, pulseA * 1.8F, closeFrac);
+        // Extra hyper-bright filament INSIDE the core -- an over-bright additive pass (the render type is
+        // additive, so this stacks on top of the core rather than replacing it) that fakes a bloom right
+        // at the white-hot centre, the way a photographed bolt blows out to pure white at its middle.
+        drawChannel(buffer, matrix, path, sides, CORE_HOT_WIDTH, 1.0F, 1.0F, 1.0F, reach, baseA * 1.7F, pulseC, pulseW, pulseA * 2.2F, closeFrac);
+
+        // A big round bloom that RIDES the return-stroke pulse up the channel -- the "climbing" part of
+        // the strike, made unmistakably bright instead of leaning only on the channel's own width. This
+        // is on top of the widened/brighter pulse bands above, not a replacement for them.
+        if (pulseA > 0.0F) {
+            int pulseIdx = Mth.clamp(Math.round(pulseC * (path.length - 1)), 0, path.length - 1);
+            Vector3f pulsePos = path[pulseIdx];
+            drawGlow(buffer, matrix, camera, pulsePos, 1.7F, 0.55F, 0.85F, 0.92F, 1.0F);
+            drawGlow(buffer, matrix, camera, pulsePos, 0.75F, 1.0F, 1.0F, 1.0F, 1.0F);
+        }
 
         // Branches during the spread and the fade, but not the strike flash (see phase block above).
         if (branchBright > 0.05F) {
-            drawBranches(buffer, matrix, camera, random, path, branchBright, reach);
+            Vector3f boltWorldPos = new Vector3f((float) bolt.getX(), (float) bolt.getY(), (float) bolt.getZ());
+            drawBranches(buffer, matrix, camera, random, path, branchBright, reach, level, boltWorldPos, closeFrac);
         }
 
         // The lamp itself brightens as the leader charges down, flares at the strike, then fades -- a
         // soft bloom at the orb end of the channel (path[0]).
         drawGlow(buffer, matrix, camera, path[0], 0.55F, lampGlow * 0.45F, 0.7F, 0.82F, 1.0F);
         drawGlow(buffer, matrix, camera, path[0], 0.26F, lampGlow, 0.96F, 0.98F, 1.0F);
+
+        // Impact flash: a bright pop at the STRIKE end of the channel (path[last]), separate from the
+        // lamp glow above -- the visual half of the strike's lighting impact, paired with the real
+        // BLOCK-light flare registered into LightningFlashLight just above. Three nested layers (wide
+        // dim -> medium -> tight hyper-bright), the same fake-bloom-via-geometry trick as the core, so it
+        // reads as an unmistakable flash even without a shaderpack's own bloom pass on top.
+        if (impactLight > 0.02F) {
+            Vector3f strikePoint = path[path.length - 1];
+            drawGlow(buffer, matrix, camera, strikePoint, 2.2F, impactLight * 0.35F, 0.65F, 0.78F, 1.0F);
+            drawGlow(buffer, matrix, camera, strikePoint, 1.1F, impactLight * 0.8F, 0.8F, 0.88F, 1.0F);
+            drawGlow(buffer, matrix, camera, strikePoint, 0.45F, impactLight * 1.4F, 1.0F, 1.0F, 1.0F);
+        }
         return true;
     }
 
@@ -325,6 +388,14 @@ public final class SunwellBoltRenderer {
     private static void drawChannel(VertexConsumer buffer, Matrix4f matrix, Vector3f[] pts, Vector3f[] sides,
                                     float halfWidth, float r, float g, float b,
                                     float reach, float baseAlpha, float pulseC, float pulseW, float pulseAlpha) {
+        drawChannel(buffer, matrix, pts, sides, halfWidth, r, g, b, reach, baseAlpha, pulseC, pulseW, pulseAlpha, 0.0F);
+    }
+
+    /** @param tipFade 0 = uniform; &gt;0 fades alpha toward the far end (branches: brighter near the shaft). */
+    private static void drawChannel(VertexConsumer buffer, Matrix4f matrix, Vector3f[] pts, Vector3f[] sides,
+                                    float halfWidth, float r, float g, float b,
+                                    float reach, float baseAlpha, float pulseC, float pulseW, float pulseAlpha,
+                                    float tipFade) {
         int last = pts.length - 1;
         if (last < 1) {
             return;
@@ -339,25 +410,46 @@ public final class SunwellBoltRenderer {
                 float d = frac - pulseC;
                 a += pulseAlpha * (float) Math.exp(-(d * d) / (2.0F * pulseW * pulseW));
             }
+            float hw = halfWidth;
+            if (tipFade > 0.0F) {
+                a *= 1.0F - tipFade * frac;   // brighter at the origin (near the shaft), fading to the tip
+                hw *= 1.0F - tipFade * 0.55F * frac;   // and TAPER: branches narrow toward their tips too,
+                                                        // instead of a flat uniform-width ribbon
+            }
             if (a <= 0.004F) {
                 continue;
             }
             float cr = r * a;
             float cg = g * a;
             float cb = b * a;
-            vtx(buffer, matrix, pts[i - 1], sides[i - 1], -halfWidth, cr, cg, cb);
-            vtx(buffer, matrix, pts[i], sides[i], -halfWidth, cr, cg, cb);
-            vtx(buffer, matrix, pts[i], sides[i], halfWidth, cr, cg, cb);
-            vtx(buffer, matrix, pts[i - 1], sides[i - 1], halfWidth, cr, cg, cb);
+            vtx(buffer, matrix, pts[i - 1], sides[i - 1], -hw, cr, cg, cb);
+            vtx(buffer, matrix, pts[i], sides[i], -hw, cr, cg, cb);
+            vtx(buffer, matrix, pts[i], sides[i], hw, cr, cg, cb);
+            vtx(buffer, matrix, pts[i - 1], sides[i - 1], hw, cr, cg, cb);
         }
     }
+
+    /** How much a branch is allowed to shorten to stop right at a surface instead of clipping through it. */
+    private static final float REACH_MARGIN = 0.25F;
+
+    /** Reference lengths used to scale growth speed by target distance -- see {@link #branchGrowthWindow}. */
+    private static final float BRANCH_LEN_REFERENCE = 2.0F;
+    private static final float SUB_LEN_REFERENCE = 1.0F;
+    private static final float BRANCH_GROWTH_MIN = 0.12F;
+    private static final float BRANCH_GROWTH_MAX = 0.9F;
 
     /**
      * Forks off the main channel, like the reference bolt: several primary branches from the upper
      * three-quarters, each spawning its own smaller sub-branches, all angling down and out and fading.
+     *
+     * <p>Branches are world-aware: each primary samples a couple of nearby directions and keeps whichever
+     * has the most open room ahead of it (real lightning finds the open air, not the nearest wall), then
+     * its length is clipped to stop right where it actually reaches a block -- touching real geometry
+     * instead of passing through it.</p>
      */
     private static void drawBranches(VertexConsumer buffer, Matrix4f matrix, Vector3f camera, RandomSource random,
-                                     Vector3f[] path, float bright, float reach) {
+                                     Vector3f[] path, float bright, float reach, Level level, Vector3f worldOrigin,
+                                     float closeFrac) {
         int last = path.length - 1;
         int count = 4 + random.nextInt(4); // 4-7 primaries, fixed by the seed
         for (int i = 0; i < count; i++) {
@@ -391,11 +483,49 @@ public final class SunwellBoltRenderer {
             // recurse into their own small sub-branches; ones near the strike stay short and clean.
             // topFactor is 1 at the orb, 0 at the strike.
             float topFactor = 1.0F - originFrac;
-            float len = (1.0F + random.nextFloat() * 1.8F) * (0.7F + topFactor * 1.5F);
+            // Capped well below the last pass's range -- a long branch with only the fixed JAG amount of
+            // wander reads as one near-straight diagonal line instead of a fork (exactly the "looks like a
+            // single flat line" issue). See drawFork for the length-scaled jag that also fixes this.
+            float len = (1.6F + random.nextFloat() * 2.4F) * (0.65F + topFactor * 1.15F);
             int branchDepth = topFactor > 0.6F ? 3 : (topFactor > 0.35F ? 2 : (topFactor > 0.15F ? 1 : 0));
-            // A branch forms as the leader passes its origin, then grows out over BRANCH_GROWTH.
-            float growth = Mth.clamp((reach - originFrac) / BRANCH_GROWTH, 0.0F, 1.0F);
-            drawFork(buffer, matrix, camera, random, path[oi], dir, len, CORE_WIDTH * 0.7F, bright * 0.85F, branchDepth, growth);
+
+            // Reach toward real space: try a couple of small jitters around the base direction and keep
+            // whichever sees the most open room, then clip the length to where it actually meets a block.
+            // Deterministic (same RNG stream every frame), so the shape still holds still frame to frame.
+            Vector3f bestDir = dir;
+            float bestClear = clearDistance(level, worldOrigin, path[oi], dir, len);
+            for (int c = 0; c < 2; c++) {
+                float jitterAng = ang + (random.nextFloat() - 0.5F) * 1.6F;
+                Vector3f jOut = new Vector3f(perpA).mul((float) Math.cos(jitterAng)).add(perpB.mul((float) Math.sin(jitterAng)));
+                Vector3f jDir = new Vector3f(tan).mul(forward).add(jOut.mul(spread));
+                jDir.add(0.0F, -0.3F, 0.0F).normalize();
+                float clear = clearDistance(level, worldOrigin, path[oi], jDir, len);
+                if (clear > bestClear) {
+                    bestClear = clear;
+                    bestDir = jDir;
+                }
+            }
+            dir = bestDir;
+            // NEVER floor this to a minimum -- that was forcing a branch with almost no clearance to draw
+            // past what the raycast actually found, visibly touching/entering the block. If there's no
+            // room, len ends up under drawFork's own 0.35 visibility floor and the branch just doesn't
+            // draw there, rather than being forced into the wall.
+            len = Math.min(bestClear, len);
+
+            // Growth speed depends on THIS branch's own target distance: a close target grows slowly (a
+            // wide window relative to reach, so it lingers into being), a far target grows fast (a narrow
+            // window, so it lashes out quickly once the leader passes its origin).
+            float growth = Mth.clamp((reach - originFrac) / branchGrowthWindow(len), 0.0F, 1.0F);
+            // A little width variance per branch (some noticeably thicker, some hair-thin) instead of
+            // every primary being an identical ribbon -- reads as more organic, less like a repeated asset.
+            float width = CORE_WIDTH * (0.65F + random.nextFloat() * 0.6F);
+            // Same bottom-up close as the trunk: a branch near the strike end (high originFrac) fades out
+            // as soon as the close starts sweeping up; one near the orb (low originFrac) keeps going a
+            // while longer -- so branches stay visible but consistently fade WITH the trunk's own closing,
+            // instead of sitting at a fixed brightness on a section of trunk that has already gone dark.
+            float branchCloseMul = Mth.clamp(1.0F - closeFrac * originFrac * 1.4F, 0.0F, 1.0F);
+            drawFork(buffer, matrix, camera, random, path[oi], dir, len, width, bright * branchCloseMul,
+                    branchDepth, growth, level, worldOrigin);
         }
     }
 
@@ -403,27 +533,32 @@ public final class SunwellBoltRenderer {
      * One branch, grown to {@code growth} (0..1). The full jagged shape is built deterministically so
      * it never changes frame to frame; only how much of it is drawn does. Recurses into sub-branches
      * unconditionally (so the RNG stream stays identical every frame), each grown a little behind its
-     * parent — that fork-off-a-fork structure is what makes lightning read as lightning.
+     * parent — that fork-off-a-fork structure is what makes lightning read as lightning. Each sub-branch
+     * is also clipped to the nearest block along its own direction, same as the primaries.
      */
     private static void drawFork(VertexConsumer buffer, Matrix4f matrix, Vector3f camera, RandomSource random,
                                  Vector3f from, Vector3f dir, float length, float width, float bright, int depth,
-                                 float growth) {
+                                 float growth, Level level, Vector3f worldOrigin) {
         int steps = Math.max(2, Mth.ceil(length / SEGMENT_LENGTH));
         Vector3f end = new Vector3f(from).add(new Vector3f(dir).mul(length));
         Vector3f[] pts = new Vector3f[steps + 1];
         pts[0] = new Vector3f(from);
+        // The fixed trunk JAG amount is too small relative to a long branch -- it reads as one smooth
+        // near-straight diagonal instead of a jagged fork. Scale wander with the branch's OWN length
+        // (bounded) so a long branch stays proportionally as jagged as a short one.
+        float jag = Mth.clamp(length * 0.09F, JAG * 0.9F, JAG * 2.8F);
         for (int i = 1; i <= steps; i++) {
             float t = (float) i / steps;
             Vector3f pnt = new Vector3f(from).lerp(end, t);
-            pnt.add((random.nextFloat() - 0.5F) * JAG * 1.5F * t,
-                    (random.nextFloat() - 0.5F) * JAG * t,
-                    (random.nextFloat() - 0.5F) * JAG * 1.5F * t);
+            pnt.add((random.nextFloat() - 0.5F) * jag * 1.5F * t,
+                    (random.nextFloat() - 0.5F) * jag * t,
+                    (random.nextFloat() - 0.5F) * jag * 1.5F * t);
             pts[i] = pnt;
         }
         if (growth > 0.0F && bright > 0.02F && length >= 0.35F) {
             Vector3f[] sides = computeSides(pts, camera);
-            drawChannel(buffer, matrix, pts, sides, width * 1.8F, 0.5F, 0.62F, 1.0F, growth, bright * 0.3F, 0.0F, 0.1F, 0.0F);
-            drawChannel(buffer, matrix, pts, sides, width, 0.9F, 0.94F, 1.0F, growth, bright, 0.0F, 0.1F, 0.0F);
+            drawChannel(buffer, matrix, pts, sides, width * 1.8F, 0.5F, 0.62F, 1.0F, growth, bright * 0.3F, 0.0F, 0.1F, 0.0F, 0.55F);
+            drawChannel(buffer, matrix, pts, sides, width, 0.9F, 0.94F, 1.0F, growth, bright, 0.0F, 0.1F, 0.0F, 0.55F);
         }
         if (depth > 0) {
             int subs = random.nextInt(3); // 0-2 per level: a chance of none, so not every branch forks
@@ -433,11 +568,52 @@ public final class SunwellBoltRenderer {
                         (random.nextFloat() - 0.5F) * 0.8F,
                         -0.15F - 0.2F * random.nextFloat(),
                         (random.nextFloat() - 0.5F) * 0.8F).normalize();
-                float subGrowth = Mth.clamp((growth - 0.35F) / 0.65F, 0.0F, 1.0F);
+                float rolledSubLen = length * (0.35F + 0.3F * random.nextFloat());
+                // Same rule as the primaries: clip to whatever is actually there, no forced minimum, so a
+                // sub-branch with no room simply doesn't draw instead of poking into the block.
+                float subLen = Math.min(clearDistance(level, worldOrigin, origin, sub, rolledSubLen), rolledSubLen);
+                // And the same distance-based growth speed, scaled down since sub-branches are inherently
+                // shorter: a short sub-twig lingers, a longer one lashes out quickly.
+                float subWindow = Mth.clamp(0.65F * (SUB_LEN_REFERENCE / Math.max(subLen, 0.3F)),
+                        BRANCH_GROWTH_MIN, BRANCH_GROWTH_MAX);
+                float subGrowth = Mth.clamp((growth - (1.0F - subWindow)) / subWindow, 0.0F, 1.0F);
                 drawFork(buffer, matrix, camera, random, origin, sub,
-                        length * (0.35F + 0.3F * random.nextFloat()), width * 0.62F, bright * 0.6F, depth - 1, subGrowth);
+                        subLen, width * 0.62F, bright * 0.6F, depth - 1, subGrowth, level, worldOrigin);
             }
         }
+    }
+
+    /**
+     * How far (in blocks) a ray from LOCAL point {@code from} along {@code dir} can travel before hitting
+     * a solid block, capped at {@code max}. World-space collision check via {@code worldOrigin} (the
+     * bolt's world position) + {@code from}. Fixed-step sampling -- cheap and good enough for a
+     * decorative, once-per-branch query, not exact voxel traversal.
+     */
+    private static float clearDistance(Level level, Vector3f worldOrigin, Vector3f from, Vector3f dir, float max) {
+        float step = 0.4F;
+        BlockPos.MutableBlockPos probe = new BlockPos.MutableBlockPos();
+        for (float d = step; d <= max; d += step) {
+            float x = worldOrigin.x + from.x + dir.x * d;
+            float y = worldOrigin.y + from.y + dir.y * d;
+            float z = worldOrigin.z + from.z + dir.z * d;
+            probe.set(Mth.floor(x), Mth.floor(y), Mth.floor(z));
+            BlockState state = level.getBlockState(probe);
+            if (!state.getCollisionShape(level, probe).isEmpty()) {
+                return Math.max(0.0F, d - step - REACH_MARGIN);
+            }
+        }
+        return max;
+    }
+
+    /**
+     * How much of {@code reach}'s range a primary branch takes to fully grow, based on how far its own
+     * target actually is. A close target (short {@code len}, e.g. it hit a nearby wall) gets a WIDE
+     * window so it grows slowly and lingers into being; a far target (long {@code len}, open room ahead)
+     * gets a NARROW window so it lashes out quickly once the leader passes its origin.
+     */
+    private static float branchGrowthWindow(float len) {
+        return Mth.clamp(BRANCH_GROWTH * (BRANCH_LEN_REFERENCE / Math.max(len, 0.4F)),
+                BRANCH_GROWTH_MIN, BRANCH_GROWTH_MAX);
     }
 
     /** A random, mostly-horizontal displacement of up to ~{@code reach} for a bow control point. */

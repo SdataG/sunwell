@@ -26,7 +26,7 @@ public final class ModBlocks {
      * Pack blocks tagged {@code sunwell_source} only are unaffected.
      */
     public static final RegistryObject<Block> SUNWELL_LANTERN = BLOCKS.register("sunwell_lantern",
-            () -> new SunwellLanternBlock(lanternProperties(state -> 8)));
+            () -> new SunwellLanternBlock(lanternProperties(state -> 15)));
 
     public static final RegistryObject<Item> SUNWELL_LANTERN_ITEM = ITEMS.register("sunwell_lantern",
             () -> new SunwellLanternItem(SUNWELL_LANTERN.get(), new Item.Properties()));

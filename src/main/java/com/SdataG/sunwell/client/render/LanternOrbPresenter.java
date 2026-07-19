@@ -111,13 +111,6 @@ public final class LanternOrbPresenter {
                 viewSpace
         );
 
-        // God-ray shafts down the cone -- shader-only (they rely on the pack's bloom), ceiling lanterns
-        // only (a floor lamp has no room below), and sun-only via `rays` so a moon/overcast casts none.
-        if (hanging && !viewSpace && rays > 0.01F && com.SdataG.sunwell.ShaderCompat.shadersActive()) {
-            OrbGlowOverlay.renderGodRays(poseStack, bufferSource, 0.5F, pivotY, 0.5F,
-                    sky.red(), sky.green(), sky.blue(), rays * exposure * brightness, rayPhase);
-        }
-
         // Squash/spread the orb about its own centre for the transformation.
         poseStack.pushPose();
         poseStack.translate(0.5D, pivotY, 0.5D);

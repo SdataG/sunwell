@@ -18,7 +18,8 @@
         "client.amendments.LanternRendererExtensionMixin",
         "client.amendments.WallLanternBlockTileRendererMixin",
         "client.LightningBoltRendererMixin",
-        "client.LightningBoltSoundMixin"
+        "client.LightningBoltSoundMixin",
+        "client.SodiumLevelSliceMixin"
     ],
     "injectors": {
         "defaultRequire": 1

@@ -7,6 +7,7 @@ import net.minecraft.server.level.ServerLevel;
 import net.minecraft.world.entity.MobCategory;
 import net.minecraft.world.level.Level;
 import net.minecraft.world.level.chunk.LevelChunk;
+import net.minecraftforge.event.RegisterCommandsEvent;
 import net.minecraftforge.event.TickEvent;
 import net.minecraftforge.event.entity.living.MobSpawnEvent;
 import net.minecraftforge.event.level.ChunkEvent;
@@ -20,6 +21,11 @@ import net.minecraftforge.eventbus.api.SubscribeEvent;
  * other mods are all covered, not just player placement events.
  */
 public final class SunwellEvents {
+
+    @SubscribeEvent
+    public static void onRegisterCommands(RegisterCommandsEvent event) {
+        SunwellCommands.register(event.getDispatcher());
+    }
 
     @SubscribeEvent
     public static void onLevelLoad(LevelEvent.Load event) {

@@ -40,7 +40,7 @@ public final class SunwellConfig {
     public static volatile int maxRadius = 12;
     public static volatile int maxDepth = 40;
     public static volatile int coneSpread = 1;
-    public static volatile int skyLevel = 13;
+    public static volatile int skyLevel = 14;
     public static volatile boolean attenuateByDepth = false;
     public static volatile boolean enableUndeadBurning = true;
     public static volatile boolean blockHostileSpawns = true;
@@ -53,8 +53,8 @@ public final class SunwellConfig {
     public static volatile int snowAccumulateOdds = 12;
     public static volatile int snowMaxLayers = 8;
     public static volatile boolean weatherShaftParticles = true;
-    public static volatile int lightningThroughOdds = 80000;
-    public static volatile int lightningRodBoost = 40;
+    public static volatile int lightningThroughOdds = 40000;
+    public static volatile int lightningRodBoost = 400;
     public static volatile boolean lightningVisualOnly = false;
     public static volatile int nodeBudgetPerTick = 80000;
     public static volatile int chunkBudgetPerTick = 24;
@@ -81,7 +81,7 @@ public final class SunwellConfig {
         SKY_LEVEL = b.comment("Virtual SKY-light level applied inside a region. Dynamic Trees needs >=12 here.",
                         "Keep at or below 14: canSeeSky() requires exactly 15, so 14 grows everything",
                         "(crops, saplings, Dynamic Trees) without making mobs think they're under open sky.")
-                .defineInRange("skyLevel", 13, 1, 14);
+                .defineInRange("skyLevel", 14, 1, 14);
         ATTENUATE_BY_DEPTH = b.comment("If true, the virtual sky level falls off with distance from the source.",
                         "Leave false so plants everywhere in range keep enough light to grow.")
                 .define("attenuateByDepth", false);
@@ -89,7 +89,7 @@ public final class SunwellConfig {
 
         b.comment("Side effects of treating an area as open sky.").push("behavior");
         ENABLE_UNDEAD_BURNING = b.comment("If true, undead sun-burn inside sunwell regions during the day.",
-                        "Works at the default sky level of 13 via MobMixin (no need to raise skyLevel to 15).",
+                        "Works at the default sky level of 14 via MobMixin (no need to raise skyLevel to 15).",
                         "Replaces the old preventBurning option — invert the value when migrating an existing config.")
                 .define("enableUndeadBurning", true);
         BLOCK_HOSTILE_SPAWNS = b.comment("If true, monsters are blocked from spawning inside a sunwell region,",
@@ -118,11 +118,11 @@ public final class SunwellConfig {
                 .define("weatherShaftParticles", true);
         LIGHTNING_THROUGH_ODDS = b.comment("During thunderstorms, 1-in-N chance per server tick to strike a random",
                         "full-profile lantern column near a player. 0 disables. Default is very rare.")
-                .defineInRange("lightningThroughOdds", 80000, 0, 1_000_000);
+                .defineInRange("lightningThroughOdds", 40000, 0, 1_000_000);
         LIGHTNING_ROD_BOOST = b.comment("Multiplier making sunwell lightning far more frequent on a column with a",
                         "vanilla lightning_rod within 4 blocks (effective odds = lightningThroughOdds / this).",
                         "1 disables the rod bonus.")
-                .defineInRange("lightningRodBoost", 40, 1, 100_000);
+                .defineInRange("lightningRodBoost", 400, 1, 100_000);
         LIGHTNING_VISUAL_ONLY = b.comment("If true, sunwell lightning is visual-only (flash + sound, no fire). Default false: a",
                         "real strike is rare (see lightningThroughOdds), so it lights fires and does damage",
                         "like true weather. A lightning rod in range still catches it harmlessly.")
@@ -187,6 +187,18 @@ public final class SunwellConfig {
         debugSkyState = DEBUG_SKY_STATE.get();
         debugWeatherParticles = DEBUG_WEATHER_PARTICLES.get();
         debugLightning = DEBUG_LIGHTNING.get();
+    }
+
+    /** In-game {@code /sunwell lightning} hook: change the odds and persist to the server config. */
+    public static void setLightningOdds(int value) {
+        lightningThroughOdds = value;
+        LIGHTNING_THROUGH_ODDS.set(value);
+    }
+
+    /** In-game {@code /sunwell rodboost} hook: change the rod multiplier and persist to the config. */
+    public static void setLightningRodBoost(int value) {
+        lightningRodBoost = value;
+        LIGHTNING_ROD_BOOST.set(value);
     }
 
     private SunwellConfig() {

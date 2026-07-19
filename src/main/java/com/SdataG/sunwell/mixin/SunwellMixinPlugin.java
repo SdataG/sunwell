@@ -20,6 +20,10 @@ public final class SunwellMixinPlugin implements IMixinConfigPlugin {
             "com.SdataG.sunwell.mixin.amendments.WallLanternBlockMixin",
             "com.SdataG.sunwell.mixin.client.amendments.WallLanternBlockTileRendererMixin");
 
+    /** Reapplies the virtual-light boost inside Embeddium's cloned light data. Only when Embeddium is present. */
+    private static final Set<String> SODIUM_MIXINS = Set.of(
+            "com.SdataG.sunwell.mixin.client.SodiumLevelSliceMixin");
+
     @Override
     public void onLoad(String mixinPackage) {
     }
@@ -33,6 +37,9 @@ public final class SunwellMixinPlugin implements IMixinConfigPlugin {
     public boolean shouldApplyMixin(String targetClassName, String mixinClassName) {
         if (AMENDMENTS_MIXINS.contains(mixinClassName)) {
             return isModLoaded("amendments") && isModLoaded("moonlight");
+        }
+        if (SODIUM_MIXINS.contains(mixinClassName)) {
+            return isModLoaded("embeddium");
         }
         return true;
     }
